@@ -2,14 +2,13 @@ package com.cyberpython.kottakcot
 
 import com.cyberpython.kotcot.Event
 import com.cyberpython.kotcot.CoT
+import com.cyberpython.kotcot.Point
+import com.cyberpython.kottakcot.protobuf.Cotevent.CotEvent
+import com.cyberpython.kottakcot.protobuf.Takcontrol.TakControl
 
 import java.util.Base64
 import com.cyberpython.kottakcot.protobuf.Takmessage.TakMessage
-
-import kotlin.test.Test
-import kotlin.test.assertTrue
-import kotlin.test.assertEquals
-import kotlin.test.assertNotNull
+import kotlin.test.*
 
 @kotlin.ExperimentalUnsignedTypes
 class KotTakCotTest {
@@ -117,7 +116,7 @@ class KotTakCotTest {
                                           0x3aU, 0x12U, 0x09U, 0x00U, 0x00U, 0x00U, 0xc0U, 0x98U,
                                           0xa8U, 0xf8U, 0x3fU, 0x11U, 0x17U, 0xeaU, 0x3dU, 0x8aU,
                                           0x41U, 0xe0U, 0x71U, 0x40U).toByteArray()
-        val evt2 = ktc.parse(testDataTakCot)
+        val evt2 = ktc.parse(testDataTakCot){println("Handled: $it")}
         assertNotNull(evt2)
         assertEquals(evt, evt2)
     }
@@ -254,6 +253,42 @@ class KotTakCotTest {
       val evt2 = ktc.parse(testDataTakCot) // Convert ProtoBuf back to KotCot Event
       assertNotNull(evt2)
       assertEquals(evt,evt2)
+    }
+    @Test fun testHandleOfTakControl(){
+        val takProto = TakMessage.newBuilder()
+            .setTakControl(TakControl.newBuilder().setMinProtoVersion(1).setMaxProtoVersion(1))
+            .setCotEvent(CotEvent.newBuilder().setType("a-f-G-U-C").setUid("1").setHow("m-g"))
+            .build()
+        val ktc = KotTakCot()
+        var handled = false
+        ktc.parse(byteArrayOf(0xbf.toByte(),1,0xbf.toByte())+ takProto.toByteArray()){handled=true}
+        assertTrue( handled )
+    }
+    @Test fun testHandleOfTakControl_missing(){
+        val takProto = TakMessage.newBuilder()
+            .setCotEvent(CotEvent.newBuilder().setType("a-f-G-U-C").setHow("m-g"))
+            .build()
+        val ktc = KotTakCot()
+        var handled = false
+        ktc.parse(byteArrayOf(0xbf.toByte(),1,0xbf.toByte())+ takProto.toByteArray()){handled=true}
+        assertFalse(handled)
+    }
+
+    @Test fun testWriteWithTakeControl(){
+        val xmlCoT = """
+        <event version="2" type="a-h-S-C-L-D-D" access="national-restricted" qos="5-r-c" uid="1f3836bf-67b0-447c-8f41-292a325112b7" time="2022-08-19T16:09:11.128558Z" start="2022-08-19T16:09:11.130456Z" stale="2022-08-19T16:19:11.130479Z" how="m-g">
+          <point lat="37.409" lon="23.768" hae="0.0" ce="0.0" le="0.0"/>
+        </event>
+        """.trimIndent()
+
+        // Create the expected value:
+        val tmpCot = CoT()
+        val evt = tmpCot.parse(xmlCoT)
+        val ktc = KotTakCot()
+        val data = ktc.write(evt,TakCotControl())
+        var control: TakCotControl? = null
+        val takProto2 = ktc.parse(data){control = it}
+        assertEquals(TakCotControl(), control)
     }
 
 }

@@ -17,6 +17,7 @@ import com.cyberpython.kottakcot.protobuf.ContactOuterClass.Contact
 import com.cyberpython.kottakcot.protobuf.GroupOuterClass.Group
 import com.cyberpython.kottakcot.protobuf.Precisionlocation.PrecisionLocation
 import com.cyberpython.kottakcot.protobuf.StatusOuterClass.Status
+import com.cyberpython.kottakcot.protobuf.Takcontrol.TakControl
 import com.cyberpython.kottakcot.protobuf.TakvOuterClass.Takv
 
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -24,7 +25,8 @@ import com.fasterxml.jackson.annotation.JsonInclude.Include
 import com.fasterxml.jackson.core.type.TypeReference
 import com.fasterxml.jackson.dataformat.xml.XmlMapper
 import com.fasterxml.jackson.module.kotlin.registerKotlinModule
-
+import kotlin.math.max
+import kotlin.math.min
 
 
 data class TakCotContact (
@@ -70,9 +72,15 @@ data class TakCotDetail(
 
 )
 
+data class TakCotControl(
+    val minProtoVersion:Int=1,
+    val maxProtoVersion:Int=1,
+    val contactUid: String=""
+)
+
 class KotTakCot {
 
-    fun parse(bytes: ByteArray): Event? {
+    fun parse(bytes: ByteArray, handleTakControl: (TakCotControl)->Unit={}): Event? {
         if ( (bytes.size > 3) && 0xbfu.equals((bytes[0].toUInt() and 0xffu)) && 0xbfu.equals(bytes[2].toUInt() and 0xffu)) {
             when (bytes.get(1).toUInt() and 0xffu) {
                 0u -> {
@@ -81,7 +89,13 @@ class KotTakCot {
                 }
                 1u -> {
                     val takMsg = TakMessage.parseFrom(bytes.slice(3..bytes.size-1).toByteArray())
-
+                    if (takMsg.hasTakControl()){
+                        val tc = takMsg.takControl
+                        val minProtoVersion = max(1, tc.minProtoVersion)
+                        val maxProtoVersion = max(1, tc.maxProtoVersion)
+                        val contactUid = tc.contactUid
+                        handleTakControl(TakCotControl(minProtoVersion, maxProtoVersion, contactUid))
+                    }
                     if (takMsg.hasCotEvent()){
 
                         // Convert the TAK protobuf detail hierarchy to a series
@@ -143,7 +157,7 @@ class KotTakCot {
     }
 
     @kotlin.ExperimentalUnsignedTypes
-    fun write(event: Event) : ByteArray {
+    fun write(event: Event, takCotControl: TakCotControl?=null) : ByteArray {
 
         val cot = CoT()
 
@@ -357,10 +371,17 @@ class KotTakCot {
 
         
         
-        val cotEvt = cotEvtBldr.build()
 
-        val takMsg = TakMessage.newBuilder().setCotEvent(cotEvt).build()
-        
-        return ubyteArrayOf(0xbfU, 0x01U, 0xbfU).toByteArray() + takMsg.toByteString().toByteArray()
+        val takMsgBldr = TakMessage.newBuilder().setCotEvent(cotEvtBldr)
+        if (takCotControl!=null){
+            val takControlBldr = TakControl.newBuilder()
+                .setMinProtoVersion(takCotControl.minProtoVersion)
+                .setMaxProtoVersion(takCotControl.maxProtoVersion)
+            if (takCotControl.contactUid !=null){
+                takControlBldr.setContactUid(takCotControl.contactUid)
+            }
+            takMsgBldr.setTakControl(takControlBldr)
+        }
+        return ubyteArrayOf(0xbfU, 0x01U, 0xbfU).toByteArray() + takMsgBldr.build().toByteString().toByteArray()
     }
 }
